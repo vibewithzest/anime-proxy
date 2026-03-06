@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnimeKai Playback Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        video {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #e50914;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        #logs {
+            margin-top: 20px;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        .success {
+            color: #4caf50;
+        }
+
+        .error {
+            color: #f44336;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>AnimeKai Playback Demo</h1>
+    <video id="video" controls></video>
+    <br>
+    <button onclick="playDemo()">Load & Play Demo</button>
+    <div id="logs">Logs will appear here...</div>
+
+    <script>
+        function log(msg, type = 'info') {
+            const logs = document.getElementById('logs');
+            const color = type === 'error' ? 'red' : (type === 'success' ? 'lightgreen' : 'white');
+            logs.innerHTML += `<div style="color:${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            console.log(msg);
+        }
+
+        async function playDemo() {
+            log('Starting demo...');
+            try {
+                // 1. Fetch Info for "Naruto" (older anime)
+                log('Fetching info for "naruto" search...');
+                const searchRes = await fetch('http://localhost:3000/anime/animekai/naruto');
+                if (!searchRes.ok) throw new Error('Failed to search');
+                const searchData = await searchRes.json();
+
+                if (!searchData.results || searchData.results.length === 0) throw new Error('No results for Naruto');
+                const anime = searchData.results[0];
+                log(`Found: ${anime.title} (${anime.id})`, 'success');
+
+                log(`Fetching info for ID: ${anime.id}...`);
+                const infoRes = await fetch(`http://localhost:3000/anime/animekai/info?id=${anime.id}`);
+                const info = await infoRes.json();
+
+                if (!info.episodes || info.episodes.length === 0) throw new Error('No episodes found');
+                const firstEp = info.episodes[0];
+                log(`Found episode ID: ${firstEp.id}`, 'success');
+
+                // 2. Fetch Stream URL
+                log(`Fetching stream...`);
+                const watchUrl = `http://localhost:3000/anime/animekai/watch/${encodeURIComponent(firstEp.id)}`;
+                const watchRes = await fetch(watchUrl);
+                if (!watchRes.ok) throw new Error('Failed to fetch stream sources');
+                const watchData = await watchRes.json();
+
+                if (!watchData.sources || watchData.sources.length === 0) throw new Error('No stream sources returned');
+
+                const source = watchData.sources.find(s => s.quality === 'default') || watchData.sources[0];
+                log(`Got stream URL: ${source.url}`, 'success');
+
+                // 3. Proxy URL Construction
+                let playUrl = source.url;
+                if (watchData.headers && watchData.headers.Referer) {
+                    log('Stream requires Referer, using proxy...');
+                    playUrl = `http://localhost:3000/utils/image-proxy?url=${encodeURIComponent(source.url)}&referer=${encodeURIComponent(watchData.headers.Referer)}`;
+                }
+
+                log(`Playing: ${playUrl}`);
+
+                // 4. Play Video
+                const video = document.getElementById('video');
+                if (Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(playUrl);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                        video.play().catch(e => log('Autoplay blocked, click play', 'error'));
+                    });
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        if (data.fatal) {
+                            log(`HLS Fatal Error: ${data.details}`, 'error');
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = playUrl;
+                    video.addEventListener('loadedmetadata', function () {
+                        video.play();
+                    });
+                }
+                log('Player initialized!', 'success');
+
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+
+</html>
