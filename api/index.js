@@ -18,6 +18,11 @@ export default async function handler(req, res) {
 
   try {
     const animekai = new ANIME.AnimeKai();
+    
+    // Attempt to bypass by overriding the default axios instance headers if possible
+    // Note: Consumet extensions use an internal axios instance. 
+    // We'll try to pass a more convincing ID or use the search method first which is sometimes less protected.
+    
     console.log(`Fetching info for ID: ${id}`);
     const data = await animekai.fetchAnimeInfo(id);
     
